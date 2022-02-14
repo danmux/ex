@@ -49,7 +49,7 @@ type Config struct {
 	Timeout time.Duration
 	// MaxConnectionsPerHost sets the connection pool size
 	MaxConnectionsPerHost int
-	// UserAgent that will be used for every request
+	// UserAgent that will be used for every Request
 	UserAgent string
 	// Transport allows overriding the default HTTP transport the client will use.
 	Transport *http.Transport
@@ -120,7 +120,8 @@ type Decoder func(r io.Reader) error
 
 const successDecodeStatus = -1
 
-// Request is an individual http request that the Client will send
+// Request is an individual http Request that the Client will send
+// NewRequest should be used to create a new Request rather than constructing a Request directly.
 type Request struct {
 	Method string
 	Route  string
@@ -136,29 +137,30 @@ type Request struct {
 	Query         url.Values
 	NoPropagation bool
 
-	url string
+	url    string
+	client *Client
 }
 
-// NewRequest should be used to create a new request rather than constructing a Request directly.
+// NewRequest should be used to create a new Request rather than constructing a Request directly.
 // This encourages the user to specify a "route" for the tracing, and avoid high cardinality routes
 // (when parts of the url may contain many varying values).
 // The returned Request can be further altered before being passed to the client.Call.
-func NewRequest(method, route string, timeout time.Duration, routeParams ...interface{}) Request {
-	return Request{
-		Method:  method,
-		url:     fmt.Sprintf(route, routeParams...),
-		Route:   route,
-		Timeout: timeout,
+func (c *Client) NewRequest(method, route string, routeParams ...interface{}) *Request {
+	return &Request{
+		Method: method,
+		url:    fmt.Sprintf(route, routeParams...),
+		Route:  route,
+		client: c,
 	}
 }
 
-// AddDecoder returns a new request with a specific response body decoder to some http status code
-// Note this will not modify the original request.
+// AddDecoder adds a response body decoder to some http status code
+// Note this will modify the original Request.
 // Example usage:
-// 		err := NewRequest("POST", "/bad", time.Second).
+// 		err := client.NewRequest("POST", "/bad", time.Second).
 // 			AddDecoder(400, NewStringDecoder(&s)).
 //		 	Call(ctx, client)
-func (r Request) AddDecoder(status int, decoder Decoder) Request {
+func (r *Request) AddDecoder(status int, decoder Decoder) *Request {
 	if r.Decoders == nil {
 		r.Decoders = map[int]Decoder{}
 	}
@@ -166,17 +168,19 @@ func (r Request) AddDecoder(status int, decoder Decoder) Request {
 	return r
 }
 
-// AddSuccessDecoder returns a new request with a decoder for all 2xx statuses
-func (r Request) AddSuccessDecoder(decoder Decoder) Request {
+// AddSuccessDecoder adds a decoder for all 2xx statuses
+func (r *Request) AddSuccessDecoder(decoder Decoder) *Request {
 	return r.AddDecoder(successDecodeStatus, decoder)
 }
 
-// Call is a convenience method to invoke call on the request itself
-func (r Request) Call(ctx context.Context, c *Client) error {
-	return c.Call(ctx, r)
 }
 
-// Call makes the request call. It will trace out a top level span and a span for any retry attempts.
+// Call is a convenience method to invoke call on the Request itself
+func (r *Request) Call(ctx context.Context) error {
+	return r.client.Call(ctx, *r)
+}
+
+// Call makes the Request call. It will trace out a top level span and a span for any retry attempts.
 // Retries will be attempted on any 5XX responses.
 // If the http call completed with a non 2XX status code then an HTTPError will be returned containing
 // details of result of the call.
@@ -226,7 +230,7 @@ func (c *Client) Call(ctx context.Context, r Request) (err error) {
 			b := &bytes.Buffer{}
 			err = json.NewEncoder(b).Encode(r.Body)
 			if err != nil {
-				return nil, fmt.Errorf("could not json encode request: %w", err)
+				return nil, fmt.Errorf("could not json encode Request: %w", err)
 			}
 			req.Body = ioutil.NopCloser(b)
 		}
@@ -238,7 +242,7 @@ func (c *Client) Call(ctx context.Context, r Request) (err error) {
 	return doneRetrying(err)
 }
 
-// retryRequest will make the request and only call the decoder when a 2XX has been received.
+// retryRequest will make the Request and only call the decoder when a 2XX has been received.
 // Any response body in non 2XX cases is discarded.
 // nolint: funlen
 func (c *Client) retryRequest(ctx context.Context, name string, r Request, newReq func() (*http.Request, error)) error {
@@ -259,7 +263,7 @@ func (c *Client) retryRequest(ctx context.Context, name string, r Request, newRe
 			return backoff.Permanent(err)
 		}
 
-		// Add the per single http request timeout.
+		// Add the per single http Request timeout.
 		// This client is essentially for service to service calls, anyone is going to expect
 		// it to have a sane default timeout, hence 5 seconds if one is not specified.
 		requestTimeout := r.Timeout

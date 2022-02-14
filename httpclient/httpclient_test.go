@@ -30,11 +30,11 @@ import (
 )
 
 func TestNewRequest_Formats(t *testing.T) {
-	req := NewRequest("POST", "/%s.txt", time.Second, "the-path")
+	client := New(Config{})
+	req := client.NewRequest("POST", "/%s.txt", "the-path")
 	assert.Check(t, cmp.Equal(req.url, "/the-path.txt"))
 	assert.Check(t, cmp.Equal(req.Route, "/%s.txt"))
 	assert.Check(t, cmp.Equal(req.Method, "POST"))
-	assert.Check(t, cmp.Equal(req.Timeout, time.Second))
 }
 
 func TestClient_Call_Propagates(t *testing.T) {
@@ -57,10 +57,10 @@ func TestClient_Call_Propagates(t *testing.T) {
 		BaseURL: server.URL,
 		Timeout: time.Second,
 	})
-	req := NewRequest("POST", "/", time.Second)
+	req := client.NewRequest("POST", "/")
 
 	ctx, span := o11y.StartSpan(ctx, "test client span")
-	err := client.Call(ctx, req)
+	err := req.Call(ctx)
 	assert.Check(t, err)
 	span.End()
 
@@ -99,9 +99,9 @@ func TestClient_Call_Decodes(t *testing.T) {
 	t.Run("Decode JSON", func(t *testing.T) {
 		m := make(map[string]string)
 
-		err := NewRequest("POST", "/ok", time.Second).
+		err := client.NewRequest("POST", "/ok").
 			AddDecoder(200, NewJSONDecoder(&m)).
-			Call(ctx, client)
+			Call(ctx)
 
 		assert.Check(t, err)
 		assert.Check(t, cmp.DeepEqual(m, map[string]string{
@@ -113,30 +113,30 @@ func TestClient_Call_Decodes(t *testing.T) {
 	t.Run("Decode bytes", func(t *testing.T) {
 		var bs []byte
 
-		err := NewRequest("POST", "/ok", time.Second).
+		err := client.NewRequest("POST", "/ok").
 			AddSuccessDecoder(NewBytesDecoder(&bs)).
-			Call(ctx, client)
+			Call(ctx)
 
 		assert.Check(t, err)
 		assert.Check(t, cmp.DeepEqual(bs, []byte(body)))
 	})
 
 	t.Run("Decode string (with deprecated decoder field)", func(t *testing.T) {
-		req := NewRequest("POST", "/ok", time.Second)
+		req := client.NewRequest("POST", "/ok")
 
 		var s string
 		req.Decoder = NewStringDecoder(&s)
 
-		err := client.Call(ctx, req)
+		err := req.Call(ctx)
 		assert.Check(t, err)
 		assert.Check(t, cmp.Equal(s, body))
 	})
 
 	t.Run("Decode errors", func(t *testing.T) {
 		var s string
-		err := NewRequest("POST", "/bad", time.Second).
+		err := client.NewRequest("POST", "/bad").
 			AddDecoder(400, NewStringDecoder(&s)).
-			Call(ctx, client)
+			Call(ctx)
 
 		assert.Check(t, HasStatusCode(err, 400))
 		assert.Check(t, cmp.Equal(s, body))
@@ -180,9 +180,9 @@ func TestClient_Call_UnixSocket(t *testing.T) {
 
 	t.Run("Decode String", func(t *testing.T) {
 		s := ""
-		err := NewRequest("GET", "/ok", time.Second).
+		err := client.NewRequest("GET", "/ok").
 			AddDecoder(200, NewStringDecoder(&s)).
-			Call(ctx, client)
+			Call(ctx)
 
 		assert.Check(t, err)
 		assert.Check(t, cmp.Equal("hello unix socket", s))
@@ -202,7 +202,7 @@ func TestClient_Call_NoContent(t *testing.T) {
 		BaseURL: server.URL,
 		Timeout: time.Second,
 	})
-	req := NewRequest("POST", "/", time.Second)
+	req := client.NewRequest("POST", "/")
 
 	type res struct {
 		A string `json:"a"`
@@ -212,7 +212,7 @@ func TestClient_Call_NoContent(t *testing.T) {
 	var m res
 	req.Decoder = NewJSONDecoder(&m)
 
-	err := client.Call(ctx, req)
+	err := req.Call(ctx)
 	assert.Check(t, errors.Is(err, ErrNoContent))
 	assert.Check(t, IsNoContent(err))
 	assert.Check(t, cmp.DeepEqual(m, res{}))
@@ -256,9 +256,10 @@ func TestClient_Call_Timeouts(t *testing.T) {
 				BaseURL: server.URL,
 				Timeout: tt.totalTimeout,
 			})
-			req := NewRequest("POST", "/", tt.perRequestTimeout)
+			req := client.NewRequest("POST", "/")
+			req.Timeout = tt.perRequestTimeout
 			ctx := testcontext.Background()
-			err := client.Call(ctx, req)
+			err := req.Call(ctx)
 			if tt.wantError == nil {
 				assert.Check(t, err)
 			} else {
@@ -276,9 +277,10 @@ func TestClient_Call_Retry500(t *testing.T) {
 		BaseURL: server.URL,
 		Timeout: time.Second,
 	})
-	req := NewRequest("POST", "/", time.Millisecond)
+	req := client.NewRequest("POST", "/")
+	req.Timeout = time.Millisecond
 	ctx := testcontext.Background()
-	err := client.Call(ctx, req)
+	err := req.Call(ctx)
 	// confirm it is still an http error carrying the expected code
 	assert.Check(t, HasStatusCode(err, http.StatusInternalServerError))
 	// confirm that it is now not a warning
@@ -296,13 +298,14 @@ func TestClient_Call_ContextCancel(t *testing.T) {
 		BaseURL: server.URL,
 		Timeout: 10 * time.Second,
 	})
-	req := NewRequest("POST", "/", time.Minute)
+	req := client.NewRequest("POST", "/")
+	req.Timeout = time.Minute
 	ctx, cancel := context.WithCancel(testcontext.Background())
 	defer cancel()
 
 	callErr := make(chan error)
 	go func() {
-		callErr <- client.Call(ctx, req)
+		callErr <- req.Call(ctx)
 	}()
 
 	time.Sleep(time.Millisecond * 10)
@@ -329,11 +332,11 @@ func TestClient_Call_SetQuery(t *testing.T) {
 		Timeout:   10 * time.Second,
 		UserAgent: "Foo",
 	})
-	req := NewRequest("POST", "/", time.Second)
+	req := client.NewRequest("POST", "/")
 	req.Query = url.Values{}
 	req.Query.Set("foo", "bar")
 
-	err := client.Call(context.Background(), req)
+	err := req.Call(context.Background())
 	assert.Check(t, err)
 	assert.Check(t, cmp.DeepEqual(recorder.LastRequest(), &httprecorder.Request{
 		Method: "POST",
@@ -457,7 +460,7 @@ func TestIsRequestProblem(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "With non-request error code",
+			name: "With non-Request error code",
 			err: &HTTPError{
 				code: 500,
 			},
@@ -531,10 +534,10 @@ func TestClient_ConnectionPool(t *testing.T) {
 			BaseURL: "http://" + srv.Addr(),
 			Timeout: time.Second,
 		})
-		req := NewRequest("POST", "/", time.Second)
+		req := client.NewRequest("POST", "/")
 
 		for n := 0; n < 50; n++ {
-			err := client.Call(context.Background(), req)
+			err := req.Call(context.Background())
 			assert.NilError(t, err)
 		}
 
@@ -554,7 +557,7 @@ func TestClient_ConnectionPool(t *testing.T) {
 			Timeout:               time.Second,
 			MaxConnectionsPerHost: maxConnections,
 		})
-		req := NewRequest("POST", "/", time.Second)
+		req := client.NewRequest("POST", "/")
 
 		concurrency := 30
 		var wg sync.WaitGroup
@@ -562,7 +565,7 @@ func TestClient_ConnectionPool(t *testing.T) {
 		for c := 0; c < concurrency; c++ {
 			go func() {
 				for n := 0; n < 10; n++ {
-					err := client.Call(testcontext.Background(), req)
+					err := req.Call(testcontext.Background())
 					assert.NilError(t, err)
 					// This delay increases the effect of not setting MaxIdleConnsPerHost
 					// on the client since this increases the chance that each connection may be
@@ -644,7 +647,7 @@ func TestClient_ExplicitBackoff(t *testing.T) {
 			Timeout: time.Second,
 		})
 		client.now = nowFn
-		req := NewRequest("POST", "/", time.Second)
+		req := client.NewRequest("POST", "/")
 
 		// Making concurrent calls in this test to increase the chance of
 		// flushing out any race in the client
@@ -653,7 +656,7 @@ func TestClient_ExplicitBackoff(t *testing.T) {
 		wg.Add(numReq)
 		for n := 0; n < numReq; n++ {
 			go func() {
-				err := client.Call(context.Background(), req)
+				err := req.Call(context.Background())
 				assert.NilError(t, err)
 				wg.Done()
 			}()
@@ -686,7 +689,7 @@ func TestClient_ExplicitBackoff(t *testing.T) {
 			go func() {
 				// these calls may see a mix of nil error, explicit backoff
 				// and 429's most likely all 429's, so no point testing the error
-				_ = client.Call(context.Background(), req)
+				_ = req.Call(context.Background())
 				wg.Done()
 			}()
 		}
@@ -701,11 +704,11 @@ func TestClient_ExplicitBackoff(t *testing.T) {
 		assert.Check(t, handlerCount > numReq && handlerCount <= numReq*2, handlerCount)
 
 		// there is a v slim chance this call is the first one to see the 429
-		_ = client.Call(context.Background(), req)
+		_ = req.Call(context.Background())
 
 		// but this one will definitely be an explicit backoff
 		curHandlerCount := handlerCount
-		err = client.Call(context.Background(), req)
+		err = req.Call(context.Background())
 		assert.ErrorContains(t, err, "explicit backoff")
 		// and will not have called the server
 		assert.Check(t, cmp.Equal(curHandlerCount, handlerCount))
@@ -724,7 +727,7 @@ func TestClient_ExplicitBackoff(t *testing.T) {
 				}()
 			}
 			go func() {
-				err := client.Call(context.Background(), req)
+				err := req.Call(context.Background())
 				if err != nil {
 					assert.ErrorContains(t, err, "explicit backoff")
 				}
@@ -734,7 +737,7 @@ func TestClient_ExplicitBackoff(t *testing.T) {
 		wg.Wait()
 
 		// this call will definitely nt see the explicit backoff
-		err = client.Call(context.Background(), req)
+		err = req.Call(context.Background())
 		assert.NilError(t, err)
 	})
 }

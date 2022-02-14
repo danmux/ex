@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -143,12 +142,12 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	t.Run("Hit an ID that exists", func(t *testing.T) {
-		err = client.Call(ctx, httpclient.NewRequest("POST", "/api/%s", time.Second, "exists"))
+		err = client.NewRequest("POST", "/api/%s", "exists").Call(ctx)
 		assert.Assert(t, err)
 	})
 
 	t.Run("Hit an ID that does not exist", func(t *testing.T) {
-		err = client.Call(ctx, httpclient.NewRequest("POST", "/api/%s", time.Second, "does-not-exist"))
+		err = client.NewRequest("POST", "/api/%s", "does-not-exists").Call(ctx)
 		assert.Check(t, httpclient.HasStatusCode(err, http.StatusNotFound))
 	})
 

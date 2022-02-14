@@ -29,6 +29,7 @@ func New(baseURL string) *Releases {
 	return &Releases{baseURL: baseURL, client: httpclient.New(httpclient.Config{
 		Name:    "releases",
 		BaseURL: baseURL,
+		Timeout: 10 * time.Second,
 	})}
 }
 
@@ -36,9 +37,9 @@ func New(baseURL string) *Releases {
 func (d *Releases) Version(ctx context.Context) (string, error) {
 	version := ""
 
-	err := httpclient.NewRequest("GET", "/release.txt", time.Minute).
+	err := d.client.NewRequest("GET", "/release.txt").
 		AddSuccessDecoder(httpclient.NewStringDecoder(&version)).
-		Call(ctx, d.client)
+		Call(ctx)
 
 	version = strings.TrimSpace(version)
 	if version == "" {
@@ -74,9 +75,9 @@ func (d *Releases) ResolveURLs(ctx context.Context, rq Requirements) (map[string
 func (d *Releases) resolveURLs(ctx context.Context, rq Requirements) ([]string, error) {
 	urls := ""
 
-	err := httpclient.NewRequest("GET", "/"+rq.Version+"/checksums.txt", time.Minute).
+	err := d.client.NewRequest("GET", "/"+rq.Version+"/checksums.txt").
 		AddSuccessDecoder(httpclient.NewStringDecoder(&urls)).
-		Call(ctx, d.client)
+		Call(ctx)
 
 	if err != nil {
 		return nil, err
