@@ -49,7 +49,7 @@ type Config struct {
 	Timeout time.Duration
 	// MaxConnectionsPerHost sets the connection pool size
 	MaxConnectionsPerHost int
-	// UserAgent that will be used for every Request
+	// UserAgent that will be used for every request
 	UserAgent string
 	// Transport allows overriding the default HTTP transport the client will use.
 	Transport *http.Transport
@@ -173,6 +173,9 @@ func (r *Request) AddSuccessDecoder(decoder Decoder) *Request {
 	return r.AddDecoder(successDecodeStatus, decoder)
 }
 
+// JSON is a shorthand to decode the success body as JSON
+func (r *Request) JSON(resp interface{}) *Request {
+	return r.AddSuccessDecoder(NewJSONDecoder(resp))
 }
 
 // Call is a convenience method to invoke call on the Request itself

@@ -99,9 +99,7 @@ func TestClient_Call_Decodes(t *testing.T) {
 	t.Run("Decode JSON", func(t *testing.T) {
 		m := make(map[string]string)
 
-		err := client.NewRequest("POST", "/ok").
-			AddDecoder(200, NewJSONDecoder(&m)).
-			Call(ctx)
+		err := client.NewRequest("POST", "/ok").JSON(&m).Call(ctx)
 
 		assert.Check(t, err)
 		assert.Check(t, cmp.DeepEqual(m, map[string]string{
