@@ -38,7 +38,7 @@ func (d *Releases) Version(ctx context.Context) (string, error) {
 	version := ""
 
 	err := d.client.NewRequest("GET", "/release.txt").
-		AddSuccessDecoder(httpclient.NewStringDecoder(&version)).
+		SetSuccessDecoder(httpclient.NewStringDecoder(&version)).
 		Call(ctx)
 
 	version = strings.TrimSpace(version)
@@ -76,7 +76,7 @@ func (d *Releases) resolveURLs(ctx context.Context, rq Requirements) ([]string, 
 	urls := ""
 
 	err := d.client.NewRequest("GET", "/"+rq.Version+"/checksums.txt").
-		AddSuccessDecoder(httpclient.NewStringDecoder(&urls)).
+		SetSuccessDecoder(httpclient.NewStringDecoder(&urls)).
 		Call(ctx)
 
 	if err != nil {

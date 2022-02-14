@@ -62,7 +62,7 @@ func TestRunner(t *testing.T) {
 			var env []string
 			err = c.
 				NewRequest("GET", "/api/env").
-				AddSuccessDecoder(httpclient.NewJSONDecoder(&env)).
+				SetSuccessDecoder(httpclient.NewJSONDecoder(&env)).
 				Call(ctx)
 			assert.Check(t, cmp.DeepEqual([]string{"a=a", "b=b", "c=c", "d=d", "e=e"}, env))
 		})

@@ -33,8 +33,8 @@ func TestNewRequest_Formats(t *testing.T) {
 	client := New(Config{})
 	req := client.NewRequest("POST", "/%s.txt", "the-path")
 	assert.Check(t, cmp.Equal(req.url, "/the-path.txt"))
-	assert.Check(t, cmp.Equal(req.Route, "/%s.txt"))
-	assert.Check(t, cmp.Equal(req.Method, "POST"))
+	assert.Check(t, cmp.Equal(req.route, "/%s.txt"))
+	assert.Check(t, cmp.Equal(req.method, "POST"))
 }
 
 func TestClient_Call_Propagates(t *testing.T) {
@@ -112,18 +112,18 @@ func TestClient_Call_Decodes(t *testing.T) {
 		var bs []byte
 
 		err := client.NewRequest("POST", "/ok").
-			AddSuccessDecoder(NewBytesDecoder(&bs)).
+			SetSuccessDecoder(NewBytesDecoder(&bs)).
 			Call(ctx)
 
 		assert.Check(t, err)
 		assert.Check(t, cmp.DeepEqual(bs, []byte(body)))
 	})
 
-	t.Run("Decode string (with deprecated decoder field)", func(t *testing.T) {
+	t.Run("Decode string", func(t *testing.T) {
 		req := client.NewRequest("POST", "/ok")
 
 		var s string
-		req.Decoder = NewStringDecoder(&s)
+		req.SetSuccessDecoder(NewStringDecoder(&s))
 
 		err := req.Call(ctx)
 		assert.Check(t, err)
@@ -133,7 +133,7 @@ func TestClient_Call_Decodes(t *testing.T) {
 	t.Run("Decode errors", func(t *testing.T) {
 		var s string
 		err := client.NewRequest("POST", "/bad").
-			AddDecoder(400, NewStringDecoder(&s)).
+			SetDecoder(400, NewStringDecoder(&s)).
 			Call(ctx)
 
 		assert.Check(t, HasStatusCode(err, 400))
@@ -179,7 +179,7 @@ func TestClient_Call_UnixSocket(t *testing.T) {
 	t.Run("Decode String", func(t *testing.T) {
 		s := ""
 		err := client.NewRequest("GET", "/ok").
-			AddDecoder(200, NewStringDecoder(&s)).
+			SetDecoder(200, NewStringDecoder(&s)).
 			Call(ctx)
 
 		assert.Check(t, err)
@@ -208,7 +208,7 @@ func TestClient_Call_NoContent(t *testing.T) {
 	}
 
 	var m res
-	req.Decoder = NewJSONDecoder(&m)
+	req.JSON(&m)
 
 	err := req.Call(ctx)
 	assert.Check(t, errors.Is(err, ErrNoContent))
@@ -255,7 +255,7 @@ func TestClient_Call_Timeouts(t *testing.T) {
 				Timeout: tt.totalTimeout,
 			})
 			req := client.NewRequest("POST", "/")
-			req.Timeout = tt.perRequestTimeout
+			req.timeout = tt.perRequestTimeout
 			ctx := testcontext.Background()
 			err := req.Call(ctx)
 			if tt.wantError == nil {
@@ -276,7 +276,7 @@ func TestClient_Call_Retry500(t *testing.T) {
 		Timeout: time.Second,
 	})
 	req := client.NewRequest("POST", "/")
-	req.Timeout = time.Millisecond
+	req.timeout = time.Millisecond
 	ctx := testcontext.Background()
 	err := req.Call(ctx)
 	// confirm it is still an http error carrying the expected code
@@ -297,7 +297,7 @@ func TestClient_Call_ContextCancel(t *testing.T) {
 		Timeout: 10 * time.Second,
 	})
 	req := client.NewRequest("POST", "/")
-	req.Timeout = time.Minute
+	req.timeout = time.Minute
 	ctx, cancel := context.WithCancel(testcontext.Background())
 	defer cancel()
 
@@ -331,8 +331,8 @@ func TestClient_Call_SetQuery(t *testing.T) {
 		UserAgent: "Foo",
 	})
 	req := client.NewRequest("POST", "/")
-	req.Query = url.Values{}
-	req.Query.Set("foo", "bar")
+	req.query = url.Values{}
+	req.query.Set("foo", "bar")
 
 	err := req.Call(context.Background())
 	assert.Check(t, err)
